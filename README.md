@@ -1,3 +1,17 @@
+## 使用
+
+类似以下脚本：
+
+```shell
+TOOLS_DIR=${PWD}
+WORKSPACE=/your_workspace_path
+go build
+pushd ${WORKSPACE}
+${TOOLS_DIR}/mutex_check --path=.
+popd
+```
+
+
 ## 变量类型
 
 - [x] 全局变量
