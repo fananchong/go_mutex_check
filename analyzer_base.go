@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"go/types"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/callgraph"
@@ -305,4 +306,8 @@ func getCalleePostion(prog *ssa.Program, caller *callgraph.Node, callee *callgra
 		}
 	}
 	return
+}
+
+func nolint(comment string) bool {
+	return strings.Contains(comment, "nolint") && strings.Contains(comment, "mutex_check")
 }

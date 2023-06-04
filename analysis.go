@@ -19,6 +19,10 @@ func Analysis(path string, analyzer *analysis.Analyzer) error {
 	if err != nil {
 		return err
 	}
+	// comment
+	for _, pkg := range packages {
+		_ = analysisComment(pkg)
+	}
 	pass := &analysis.Pass{
 		Analyzer: analyzer,
 		Files:    []*ast.File{},

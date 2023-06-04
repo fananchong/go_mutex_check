@@ -1,13 +1,13 @@
+该工具用来检查 sync.Mutex sync.RWMutex 加锁的变量、结构体字段，是否有遗漏加锁
+
 ## 使用
 
 类似以下脚本：
 
 ```shell
-TOOLS_DIR=${PWD}
 WORKSPACE=/your_workspace_path
-go build
 pushd ${WORKSPACE}
-${TOOLS_DIR}/mutex_check --path=.
+mutex_check --path=.
 popd
 ```
 
@@ -27,14 +27,17 @@ popd
 ## 声明约定
 
 1. sync.Mutex sync.RWMutex 变量声明**加注释，标注要锁操作的变量或字段**
+2. 如果不想检查某 mutex 或者上层调用函数，可以添加注释：**// nolint: mutex_check**
 
 如以下例子：
 
 ```go
-var m sync.Mutex // a,b,c
+var m1 sync.Mutex // a,b,c
 var a int
 var b = map[int]int{}
 var c string
+
+var m2 sync.Mutex // nolint: mutex_check
 
 type A1 struct {
 	M sync.RWMutex // A
@@ -59,8 +62,8 @@ type A1 struct {
 2. 获取哪些函数 B ，直接使用了相关字段
 3. 剔除 B 中有加锁的函数，得 C
 4. 查看调用关系，逆向检查上级调用是否加锁
-   1. 顶级结构体方法也未加锁，报错
-   2. 调用链超出顶级结构体方法，报错
+   1. 顶级函数也未加锁，报错
+   2. 调用链超出本包路径，报错
 
 ## 函数返回值 - 检查步骤（TODO）
 
