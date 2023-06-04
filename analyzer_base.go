@@ -17,6 +17,7 @@ type IAnalysis interface {
 	FindCaller(*callgraph.Edge, map[*callgraph.Node]bool) error
 	CheckVarLock(prog *ssa.Program, caller *callgraph.Node, mymutex, myvar *types.Var) []token.Position
 	HaveVar(prog *ssa.Program, caller *callgraph.Node, m *types.Var) bool
+	CheckCallLock(prog *ssa.Program, caller *callgraph.Node, mymutex *types.Var, callee *callgraph.Node) bool
 }
 
 func (analyzer *BaseAnalyzer) runOne(prog *ssa.Program, pass *analysis.Pass) (interface{}, error) {
@@ -69,7 +70,10 @@ func (analyzer *BaseAnalyzer) step4CheckPath(myvar *types.Var, target *callgraph
 	// 检查是否有 mutex (上层函数)
 	mymutex := analyzer.vars[myvar]
 	if len(newPaths) > 1 && analyzer.Derive.HaveVar(analyzer.prog, target, mymutex) {
-		return
+		// 检查调用在 mutex lock 中
+		if analyzer.Derive.CheckCallLock(analyzer.prog, target, mymutex, newPaths[1]) {
+			return
+		}
 	}
 
 	// 如果超出本包，则报错
@@ -89,7 +93,6 @@ func (analyzer *BaseAnalyzer) step4CheckPath(myvar *types.Var, target *callgraph
 		return
 	} else {
 		for _, in := range target.In {
-			*checkFail = ""
 			analyzer.step4CheckPath(myvar, in.Caller, newPaths, seen, checkFail)
 		}
 	}
@@ -155,7 +158,7 @@ func (analyzer *BaseAnalyzer) Analysis() {
 					for _, pos := range varCallPos {
 						var s string
 						if pos.Filename != "" && pos.Line != 0 {
-							s = fmt.Sprintf("[mutex lint] %v:%v 没有调用 mutex lock 。", pos.Filename, pos.Line)
+							s = fmt.Sprintf("[mutex check] %v:%v 没有调用 mutex lock 。", pos.Filename, pos.Line)
 						}
 						if s != "" {
 							analyzer.Prints = append(analyzer.Prints, s)
@@ -199,7 +202,7 @@ func isMutexType(expr ast.Expr) bool {
 	return isSyncMutexType(expr) || isSyncRWMutexType(expr)
 }
 
-func checkVar(prog *ssa.Program, mInstrs []ssa.Instruction, vInstr ssa.Instruction) bool {
+func checkMutexLock(prog *ssa.Program, mInstrs []ssa.Instruction, vPos token.Position) bool {
 	if mInstrs == nil {
 		return false
 	}
@@ -212,7 +215,6 @@ func checkVar(prog *ssa.Program, mInstrs []ssa.Instruction, vInstr ssa.Instructi
 				break
 			}
 		}
-		vPos := prog.Fset.Position(vInstr.Pos())
 		if hasDefer {
 			for i := 0; i < len(mInstrs); i++ {
 				switch c := mInstrs[i].(type) {
@@ -230,7 +232,7 @@ func checkVar(prog *ssa.Program, mInstrs []ssa.Instruction, vInstr ssa.Instructi
 				}
 			}
 		} else {
-			// 否则，查看是否变量在  lock unlock 中间
+			// 否则，查看是否变量/调用在  lock unlock 中间
 			m := make(map[token.Position]token.Position)
 			for i := 0; i < len(mInstrs); i++ {
 				if c, ok := mInstrs[i].(*ssa.Call); ok {
@@ -243,7 +245,7 @@ func checkVar(prog *ssa.Program, mInstrs []ssa.Instruction, vInstr ssa.Instructi
 					// 找 unlock
 					var mPos2 token.Position
 					for j := i + 1; j < len(mInstrs); j++ {
-						if c, ok := mInstrs[i].(*ssa.Call); ok {
+						if c, ok := mInstrs[j].(*ssa.Call); ok {
 							n := c.Call.Value.Name()
 							if n == "Lock" || n == "RLock" {
 								break
@@ -290,4 +292,17 @@ func isGoroutine(fn *ssa.Function) bool {
 		}
 	}
 	return false
+}
+
+func getCalleePostion(prog *ssa.Program, caller *callgraph.Node, callee *callgraph.Node) (p []token.Position) {
+	for _, block := range caller.Func.Blocks {
+		for _, instr := range block.Instrs {
+			if c, ok := instr.(*ssa.Call); ok {
+				if f, ok := c.Call.Value.(*ssa.Function); ok && f == callee.Func {
+					p = append(p, prog.Fset.Position(instr.Pos()))
+				}
+			}
+		}
+	}
+	return
 }

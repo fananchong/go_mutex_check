@@ -114,7 +114,8 @@ func (analyzer *VarAnalyzer) CheckVarLock(prog *ssa.Program, caller *callgraph.N
 		vInstrs = append(vInstrs, analyzer.findInstrByGlobalVar(block, myvar)...)
 	}
 	for _, vInstr := range vInstrs {
-		if !checkVar(prog, mInstrs, vInstr) {
+		vPos := prog.Fset.Position(vInstr.Pos())
+		if !checkMutexLock(prog, mInstrs, vPos) {
 			poss = append(poss, caller.Func.Prog.Fset.Position(vInstr.Pos()))
 		}
 	}
@@ -131,6 +132,19 @@ func (analyzer *VarAnalyzer) HaveVar(prog *ssa.Program, caller *callgraph.Node, 
 		}
 	}
 	return find
+}
+
+func (analyzer *VarAnalyzer) CheckCallLock(prog *ssa.Program, caller *callgraph.Node, mymutex *types.Var, callee *callgraph.Node) bool {
+	var mInstrs []ssa.Instruction
+	for _, block := range caller.Func.Blocks {
+		mInstrs = append(mInstrs, analyzer.findInstrByGlobalVar(block, mymutex)...)
+	}
+	for _, vPos := range getCalleePostion(prog, caller, callee) {
+		if !checkMutexLock(prog, mInstrs, vPos) {
+			return false
+		}
+	}
+	return true
 }
 
 func (analyzer *VarAnalyzer) getGlobalVarByPos(prog *ssa.Program, pos token.Position) *types.Var {

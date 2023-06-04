@@ -15,7 +15,7 @@ import (
 
 func doCallgraph(algo string, tests bool, args []string) (*callgraph.Graph, *ssa.Program, error) {
 	cfg := &packages.Config{
-		Mode:  packages.LoadAllSyntax, //nolint:staticcheck
+		Mode:  packages.LoadAllSyntax, // nolint:staticcheck
 		Tests: tests,
 	}
 
