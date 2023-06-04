@@ -160,6 +160,26 @@ func (analyzer *VarAnalyzer) CheckCallLock(prog *ssa.Program, caller *callgraph.
 	return true
 }
 
+func (analyzer *VarAnalyzer) CheckVarReturn(prog *ssa.Program, caller *callgraph.Node, myvar *types.Var) (poss []token.Position) {
+	for _, block := range caller.Func.Blocks {
+		for _, instr := range block.Instrs {
+			if retInstr, ok := instr.(*ssa.Return); ok {
+				for _, r := range retInstr.Results {
+					if hasVar(r, myvar) {
+						vPos := analyzer.prog.Fset.Position(instr.Pos())
+						comment := getComment(vPos)
+						if nolint(comment) {
+							continue
+						}
+						poss = append(poss, vPos)
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
 func (analyzer *VarAnalyzer) getGlobalVarByPos(prog *ssa.Program, pos token.Position) *types.Var {
 	for _, pkg := range prog.AllPackages() {
 		for _, member := range pkg.Members {

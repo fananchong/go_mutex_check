@@ -19,6 +19,7 @@ type IAnalysis interface {
 	CheckVarLock(prog *ssa.Program, caller *callgraph.Node, mymutex, myvar *types.Var) []token.Position
 	HaveVar(prog *ssa.Program, caller *callgraph.Node, m *types.Var) bool
 	CheckCallLock(prog *ssa.Program, caller *callgraph.Node, mymutex *types.Var, callee *callgraph.Node) bool
+	CheckVarReturn(prog *ssa.Program, caller *callgraph.Node, myvar *types.Var) []token.Position
 }
 
 func (analyzer *BaseAnalyzer) runOne(prog *ssa.Program, pass *analysis.Pass) (interface{}, error) {
@@ -45,6 +46,21 @@ func (analyzer *BaseAnalyzer) step3CutCaller() {
 				}
 				analyzer.callers2[v][caller] = poss
 			}
+		}
+	}
+	for v := range analyzer.callers {
+		callers := analyzer.callers[v]
+		for caller := range callers {
+			// fn := caller.Func.Name()
+			// if fn[0] >= 'A' && fn[0] <= 'Z' {
+			poss := analyzer.Derive.CheckVarReturn(analyzer.prog, caller, v)
+			if len(poss) != 0 {
+				if _, ok := analyzer.callers3[v]; !ok {
+					analyzer.callers3[v] = make(map[*callgraph.Node][]token.Position)
+				}
+				analyzer.callers3[v][caller] = poss
+			}
+			// }
 		}
 	}
 }
@@ -101,14 +117,16 @@ func (analyzer *BaseAnalyzer) step4CheckPath(myvar *types.Var, target *callgraph
 
 type BaseAnalyzer struct {
 	*analysis.Analyzer
-	path     string
-	cg       *callgraph.Graph
-	prog     *ssa.Program
-	vars     map[*types.Var]*types.Var // key : 变量； value mutex
-	callers  map[*types.Var]map[*callgraph.Node][]token.Position
-	callers2 map[*types.Var]map[*callgraph.Node][]token.Position
-	Prints   sort.StringSlice
-	Derive   IAnalysis
+	path         string
+	cg           *callgraph.Graph
+	prog         *ssa.Program
+	vars         map[*types.Var]*types.Var // key : 变量； value mutex
+	callers      map[*types.Var]map[*callgraph.Node][]token.Position
+	callers2     map[*types.Var]map[*callgraph.Node][]token.Position // 没直接加锁的 call
+	callers3     map[*types.Var]map[*callgraph.Node][]token.Position // 含 return 的 call
+	PrintsCall   sort.StringSlice
+	PrintsReturn sort.StringSlice
+	Derive       IAnalysis
 }
 
 func NewBaseAnalyzer(path string, cg *callgraph.Graph, prog *ssa.Program) *BaseAnalyzer {
@@ -119,6 +137,7 @@ func NewBaseAnalyzer(path string, cg *callgraph.Graph, prog *ssa.Program) *BaseA
 		vars:     map[*types.Var]*types.Var{},
 		callers:  map[*types.Var]map[*callgraph.Node][]token.Position{},
 		callers2: map[*types.Var]map[*callgraph.Node][]token.Position{},
+		callers3: map[*types.Var]map[*callgraph.Node][]token.Position{},
 	}
 	analyzer.Analyzer = &analysis.Analyzer{
 		Name: "mutex_check",
@@ -139,7 +158,6 @@ func (analyzer *BaseAnalyzer) Analysis() {
 	analyzer.step3CutCaller()
 	// 4. 查看调用关系，逆向检查上级调用是否加锁
 	seen := make(map[string]bool)
-
 	var keys sort.StringSlice
 	m := map[string]*types.Var{}
 	for v := range analyzer.callers2 {
@@ -162,7 +180,7 @@ func (analyzer *BaseAnalyzer) Analysis() {
 							s = fmt.Sprintf("[mutex check] %v:%v 没有调用 mutex lock 。", pos.Filename, pos.Line)
 						}
 						if s != "" {
-							analyzer.Prints = append(analyzer.Prints, s)
+							analyzer.PrintsCall = append(analyzer.PrintsCall, s)
 						}
 					}
 				}
@@ -171,6 +189,32 @@ func (analyzer *BaseAnalyzer) Analysis() {
 			checkFail = ""
 		}
 	}
+
+	//
+	keys = sort.StringSlice{}
+	m = map[string]*types.Var{}
+	for v := range analyzer.callers3 {
+		n := fmt.Sprintf("%v_%v", v.Pkg().Path(), v.Name())
+		keys = append(keys, n)
+		m[n] = v
+	}
+	sort.Sort(keys)
+	for _, key := range keys {
+		v := m[key]
+		nodes := analyzer.callers3[v]
+		for _, varCallPos := range nodes {
+			for _, pos := range varCallPos {
+				var s string
+				if pos.Filename != "" && pos.Line != 0 {
+					s = fmt.Sprintf("[mutex check] %v:%v Return 要锁的变量；请使用 Walk/Visit 代替。", pos.Filename, pos.Line)
+				}
+				if s != "" {
+					analyzer.PrintsReturn = append(analyzer.PrintsReturn, s)
+				}
+			}
+		}
+	}
+
 }
 
 func isSyncMutexType(expr ast.Expr) bool {
@@ -310,4 +354,79 @@ func getCalleePostion(prog *ssa.Program, caller *callgraph.Node, callee *callgra
 
 func nolint(comment string) bool {
 	return strings.Contains(comment, "nolint") && strings.Contains(comment, "mutex_check")
+}
+
+func hasVar(v ssa.Value, myvar *types.Var) bool {
+	var find bool
+	switch myvar.Type().Underlying().(type) {
+	case *types.Map:
+		find = true
+	case *types.Slice:
+		find = true
+	case *types.Pointer:
+		find = true
+	}
+	if !find {
+		return false
+	}
+	switch v := v.(type) {
+	case *ssa.UnOp:
+		return hasVar(v.X, myvar)
+	case *ssa.FieldAddr:
+		if pointerType, ok := v.X.Type().Underlying().(*types.Pointer); ok {
+			if structType, ok := pointerType.Elem().Underlying().(*types.Struct); ok {
+				field := structType.Field(v.Field)
+				if myvar == field {
+					return true
+				}
+			}
+		}
+		return hasVar(v.X, myvar)
+	case *ssa.Global:
+		if v.Object() == myvar {
+			return true
+		}
+	case *ssa.Const:
+	case *ssa.Alloc:
+	case *ssa.Call:
+	case *ssa.Lookup:
+		// return hasVar(v.X, myvar)
+	case *ssa.Extract:
+		// switch v := v.Tuple.(type) {
+		// case *ssa.Call:
+		// case *ssa.Lookup:
+		// 	return hasVar(v.X, myvar)
+		// case *ssa.Next:
+		// 	switch v := v.Iter.(type) {
+		// 	case *ssa.Range:
+		// 		return hasVar(v.X, myvar)
+		// 	default:
+		// 		panic("发现还有其他类型需要处理下 #3")
+		// 	}
+		// default:
+		// 	panic("发现还有其他类型需要处理下 #2")
+		// }
+	case *ssa.MakeMap:
+	case *ssa.MakeChan:
+	case *ssa.MakeSlice:
+	case *ssa.Phi:
+	case *ssa.Slice:
+		return hasVar(v.X, myvar)
+	case *ssa.Parameter:
+		if v.Object() == myvar {
+			return true
+		}
+	case *ssa.BinOp:
+	case *ssa.IndexAddr:
+		// return hasVar(v.X, myvar)
+	case *ssa.TypeAssert:
+		return hasVar(v.X, myvar)
+	case *ssa.ChangeType:
+		return hasVar(v.X, myvar)
+	case *ssa.Convert:
+		return hasVar(v.X, myvar)
+	default:
+		// panic("发现还有其他类型需要处理下 #1")
+	}
+	return false
 }
