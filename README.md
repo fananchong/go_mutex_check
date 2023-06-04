@@ -7,7 +7,7 @@
 ```shell
 WORKSPACE=/your_workspace_path
 pushd ${WORKSPACE}
-mutex_check --path=.
+go_mutex_check --path=.
 popd
 ```
 
