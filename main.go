@@ -12,7 +12,7 @@ func main() {
 	flag.StringVar(&path, "path", ".", "package path")
 	flag.Parse()
 
-	cg, prog, err := doCallgraph("vta", false, []string{fmt.Sprintf("%s/...", path)})
+	cg, prog, err := doCallgraph("vta", false, getAllPackageName(path))
 	if err != nil {
 		panic(err)
 	}
