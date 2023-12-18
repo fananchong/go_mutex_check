@@ -23,15 +23,25 @@ func main() {
 	analyzer2 := NewStructFieldAnalyzer(path, cg, prog)
 	analyzer2.Analysis()
 
+	m := map[string]bool{}
 	s := append(analyzer1.PrintsCall, analyzer2.PrintsCall...)
 	sort.Sort(s)
 	for _, v := range s {
+		if _, ok := m[v]; ok {
+			continue
+		}
+		m[v] = true
 		fmt.Println(v)
 	}
 
+	m = map[string]bool{}
 	s = append(analyzer1.PrintsReturn, analyzer2.PrintsReturn...)
 	sort.Sort(s)
 	for _, v := range s {
+		if _, ok := m[v]; ok {
+			continue
+		}
+		m[v] = true
 		fmt.Println(v)
 	}
 }

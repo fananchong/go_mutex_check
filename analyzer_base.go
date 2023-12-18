@@ -162,6 +162,9 @@ func (analyzer *BaseAnalyzer) Analysis() {
 	m := map[string]*types.Var{}
 	for v := range analyzer.callers2 {
 		n := fmt.Sprintf("%v_%v", v.Pkg().Path(), v.Name())
+		if _, ok := m[n]; ok {
+			continue
+		}
 		keys = append(keys, n)
 		m[n] = v
 	}
@@ -177,7 +180,7 @@ func (analyzer *BaseAnalyzer) Analysis() {
 					for _, pos := range varCallPos {
 						var s string
 						if pos.Filename != "" && pos.Line != 0 {
-							s = fmt.Sprintf("[mutex check] %v:%v 没有调用 mutex lock 。", pos.Filename, pos.Line)
+							s = fmt.Sprintf("[mutex check] %v:%v 没有调用 mutex lock/unlock 。", pos.Filename, pos.Line)
 						}
 						if s != "" {
 							analyzer.PrintsCall = append(analyzer.PrintsCall, s)
@@ -195,6 +198,9 @@ func (analyzer *BaseAnalyzer) Analysis() {
 	m = map[string]*types.Var{}
 	for v := range analyzer.callers3 {
 		n := fmt.Sprintf("%v_%v", v.Pkg().Path(), v.Name())
+		if _, ok := m[n]; ok {
+			continue
+		}
 		keys = append(keys, n)
 		m[n] = v
 	}
@@ -244,6 +250,26 @@ func isSyncRWMutexType(expr ast.Expr) bool {
 }
 
 func isMutexType(expr ast.Expr) bool {
+	switch expr2 := expr.(type) {
+	case *ast.StarExpr:
+		return isMutexType(expr2.X)
+	}
+	return isSyncMutexType(expr) || isSyncRWMutexType(expr)
+}
+
+func isMutexType2(v *ast.ValueSpec) bool {
+	var expr ast.Expr
+	if v.Type != nil {
+		expr = v.Type
+	} else {
+		expr = v.Values[0]
+		switch expr2 := expr.(type) {
+		case *ast.UnaryExpr:
+			expr = expr2.X.(*ast.CompositeLit).Type
+		case *ast.CompositeLit:
+			expr = expr2.Type
+		}
+	}
 	return isSyncMutexType(expr) || isSyncRWMutexType(expr)
 }
 
@@ -302,6 +328,9 @@ func checkMutexLock(prog *ssa.Program, mInstrs []ssa.Instruction, vPos token.Pos
 				}
 			}
 			for pos1, pos2 := range m {
+				if !pos2.IsValid() {
+					continue
+				}
 				if pos2.Line != 0 {
 					if vPos.Line > pos1.Line && vPos.Line < pos2.Line {
 						return true

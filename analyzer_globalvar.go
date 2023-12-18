@@ -22,7 +22,7 @@ func (analyzer *VarAnalyzer) FindVar(pass *analysis.Pass) {
 			var mutexValueSpec *ast.ValueSpec
 			for _, spec := range genDecl.Specs {
 				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
-					if !isMutexType(valueSpec.Type) {
+					if !isMutexType2(valueSpec) {
 						continue
 					}
 					ident := valueSpec.Names[0]

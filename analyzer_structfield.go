@@ -207,14 +207,25 @@ func (analyzer *StructFieldAnalyzer) findInstrByStructField(block *ssa.BasicBloc
 
 func (analyzer *StructFieldAnalyzer) findInstrByStructFieldCall(block *ssa.BasicBlock, v *types.Var) (instrs []ssa.Instruction) {
 	for _, instr := range block.Instrs {
-		if c, ok := instr.(*ssa.Call); ok {
-			if c.Call.Signature().Recv() != nil && c.Call.Args != nil {
-				arg := c.Call.Args[0]
+		var c ssa.CallCommon
+		switch v := instr.(type) {
+		case *ssa.Call:
+			c = v.Call
+		case *ssa.Defer:
+			c = v.Call
+		}
+		if c.Pos().IsValid() {
+			if c.Signature().Recv() != nil && c.Args != nil {
+				arg := c.Args[0]
+				switch arg2 := arg.(type) {
+				case *ssa.UnOp:
+					arg = arg2.X
+				}
 				if fieldAddr, ok := arg.(*ssa.FieldAddr); ok && fieldAddr.X != nil {
 					if pointerType, ok := fieldAddr.X.Type().Underlying().(*types.Pointer); ok {
 						if structType, ok := pointerType.Elem().Underlying().(*types.Struct); ok {
 							field := structType.Field(fieldAddr.Field)
-							if field == v {
+							if field == v || v == nil {
 								instrs = append(instrs, instr)
 							}
 						}
