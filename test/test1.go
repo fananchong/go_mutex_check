@@ -1,11 +1,15 @@
 package test
 
-// var m1 sync.Mutex // a
-// var a int
+import (
+	"fmt"
+	"sync"
+)
 
-// func f1() {
-// 	m1.Lock()
-// 	// defer m1.Unlock()
-// 	a++
-// 	fmt.Print(a)
-// }
+var m1 sync.Mutex // a1
+var a1 int
+
+func f1() {
+	m1.Lock()
+	// defer m1.Unlock()
+	fmt.Print(a1)
+}

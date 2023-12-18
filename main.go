@@ -7,9 +7,11 @@ import (
 )
 
 var path string
+var buildFlag string
 
 func main() {
 	flag.StringVar(&path, "path", ".", "package path")
+	flag.StringVar(&buildFlag, "buildflag", "--tags=", "build flag")
 	flag.Parse()
 
 	cg, prog, err := doCallgraph("vta", false, getAllPackageName(path))

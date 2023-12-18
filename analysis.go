@@ -14,7 +14,8 @@ import (
 
 func Analysis(path string, analyzer *analysis.Analyzer) error {
 	packages, err := packages.Load(&packages.Config{
-		Mode: packages.LoadAllSyntax, // nolint:staticcheck
+		Mode:       packages.LoadAllSyntax, // nolint:staticcheck
+		BuildFlags: strings.Split(buildFlag, " "),
 	}, getAllPackageName(path)...)
 	if err != nil {
 		return err

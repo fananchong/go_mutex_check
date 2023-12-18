@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
@@ -15,8 +16,9 @@ import (
 
 func doCallgraph(algo string, tests bool, args []string) (*callgraph.Graph, *ssa.Program, error) {
 	cfg := &packages.Config{
-		Mode:  packages.LoadAllSyntax, // nolint:staticcheck
-		Tests: tests,
+		Mode:       packages.LoadAllSyntax, // nolint:staticcheck
+		Tests:      tests,
+		BuildFlags: strings.Split(buildFlag, " "),
 	}
 
 	initial, err := packages.Load(cfg, args...)
