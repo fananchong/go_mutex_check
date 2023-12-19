@@ -19,7 +19,7 @@ func (analyzer *VarAnalyzer) FindVar(pass *analysis.Pass) {
 			if !ok || genDecl.Tok != token.VAR {
 				continue
 			}
-			var mutexValueSpec *ast.ValueSpec
+			var mutexValueSpecs []*ast.ValueSpec
 			for _, spec := range genDecl.Specs {
 				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
 					if !isMutexType2(valueSpec) {
@@ -33,38 +33,40 @@ func (analyzer *VarAnalyzer) FindVar(pass *analysis.Pass) {
 					v, _ := obj.(*types.Var)
 					isGlobal := !v.IsField() && !v.Embedded() && v.Parent() == pass.Pkg.Scope() // 全局变量
 					if isGlobal {
-						mutexValueSpec = valueSpec
+						mutexValueSpecs = append(mutexValueSpecs, valueSpec)
 					}
 				}
 			}
-			if mutexValueSpec == nil {
+			if len(mutexValueSpecs) == 0 {
 				continue
 			}
-			pos := pass.Fset.Position(mutexValueSpec.Pos())
-			mutexVar := analyzer.getGlobalVarByPos(analyzer.prog, pos)
-			comment := ""
-			if mutexValueSpec.Comment != nil {
-				comment = strings.ReplaceAll(mutexValueSpec.Comment.Text(), " ", "")
-				comment = strings.ReplaceAll(comment, "\n", "")
-			}
-			if comment == "" {
-				fmt.Printf("[mutex check] %v:%v mutex 变量没有注释，指明它要锁的变量\n", pos.Filename, pos.Line)
-				continue
-			}
-			if nolint(comment) {
-				continue
-			}
-			varNames := strings.Split(comment, ",")
-			for _, name := range varNames {
-				valueSpec := analyzer.getGlobalVarByName(pass, file, name)
-				if valueSpec == nil {
-					pos := pass.Fset.Position(mutexValueSpec.Pos())
-					fmt.Printf("[mutex check] %v:%v mutex 变量注释中的变量 %v ，未声明\n", pos.Filename, pos.Line, name)
-					break
-				} else {
-					pos := pass.Fset.Position(valueSpec.Pos())
-					v := analyzer.getGlobalVarByPos(analyzer.prog, pos)
-					analyzer.vars[v] = mutexVar
+			for _, mutexValueSpec := range mutexValueSpecs {
+				pos := pass.Fset.Position(mutexValueSpec.Pos())
+				mutexVar := analyzer.getGlobalVarByPos(analyzer.prog, pos)
+				comment := ""
+				if mutexValueSpec.Comment != nil {
+					comment = strings.ReplaceAll(mutexValueSpec.Comment.Text(), " ", "")
+					comment = strings.ReplaceAll(comment, "\n", "")
+				}
+				if comment == "" {
+					fmt.Printf("[mutex check] %v:%v mutex 变量没有注释，指明它要锁的变量\n", pos.Filename, pos.Line)
+					continue
+				}
+				if nolint(comment) {
+					continue
+				}
+				varNames := strings.Split(comment, ",")
+				for _, name := range varNames {
+					valueSpec := analyzer.getGlobalVarByName(pass, file, name)
+					if valueSpec == nil {
+						pos := pass.Fset.Position(mutexValueSpec.Pos())
+						fmt.Printf("[mutex check] %v:%v mutex 变量注释中的变量 %v ，未声明\n", pos.Filename, pos.Line, name)
+						break
+					} else {
+						pos := pass.Fset.Position(valueSpec.Pos())
+						v := analyzer.getGlobalVarByPos(analyzer.prog, pos)
+						analyzer.vars[v] = mutexVar
+					}
 				}
 			}
 		}
